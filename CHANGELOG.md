@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/g4bri3lDev/ha-link/compare/v0.1.1...v0.1.2) (2026-04-24)
+
+
+### Features
+
+* improve styling ([5a94db5](https://github.com/g4bri3lDev/ha-link/commit/5a94db5755e67fd529dda73ab9e65c87fa791cc3))
+
 ## [0.1.1](https://github.com/g4bri3lDev/ha-link/compare/v0.1.0...v0.1.1) (2026-04-24)
 
 
