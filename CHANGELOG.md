@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/g4bri3lDev/ha-link/compare/v0.1.0...v0.1.1) (2026-04-24)
+
+
+### Bug Fixes
+
+* update ci ([a0a4be6](https://github.com/g4bri3lDev/ha-link/commit/a0a4be6aaa8c71e048ce8be39111bab8716375ff))
+
 ## 0.1.0 (2026-04-24)
 
 
