@@ -1,6 +1,9 @@
 from pathlib import Path
 import typer
 import questionary
+from rich.console import Console
+from rich.table import Table
+from rich import box
 from ha_link import config as cfg
 from ha_link.linker import (
     detect_domain,
@@ -11,16 +14,27 @@ from ha_link.linker import (
 )
 
 app = typer.Typer(no_args_is_help=False, add_completion=False)
+console = Console()
+
+
+def _shrink(path: Path | str) -> str:
+    try:
+        return "~/" + str(Path(path).relative_to(Path.home()))
+    except ValueError:
+        return str(path)
+
+
+def _err(msg: str) -> None:
+    console.print(f"[bold red]Error:[/bold red] {msg}")
 
 
 def _add_repo(repo_path: Path, c: cfg.Config) -> bool:
-    """Shared logic: detect domain, prompt alias, append to config. Returns True if added."""
     if not repo_path.is_dir():
-        typer.echo(f"Error: '{repo_path}' is not a directory.")
+        _err(f"'{repo_path}' is not a directory.")
         return False
     domain = detect_domain(repo_path)
     if domain is None:
-        typer.echo(f"Error: no custom_components/<domain>/manifest.json found in {repo_path}")
+        _err(f"no custom_components/<domain>/manifest.json found in {_shrink(repo_path)}")
         return False
     alias = questionary.text(
         "Alias for this integration:",
@@ -29,33 +43,32 @@ def _add_repo(repo_path: Path, c: cfg.Config) -> bool:
     if not alias:
         return False
     if any(r.alias == alias for r in c.repos):
-        typer.echo(f"Error: alias '{alias}' already exists.")
+        _err(f"alias '{alias}' already exists.")
         return False
     c.repos.append(cfg.Repo(alias=alias, path=str(repo_path)))
     cfg.save(c)
-    typer.echo(f"Registered '{alias}' ({domain})")
+    console.print(f"[green]✓[/green] Registered [bold]{alias}[/bold] ({domain})")
     return True
 
 
 def _ensure_setup() -> cfg.Config:
-    """First-run wizard: guide through setting core path and registering first repo."""
     c = cfg.load()
 
     if not c.core_path:
-        typer.echo("No HA core path configured yet.")
+        console.print("[dim]No HA core path configured yet.[/dim]")
         path_str = questionary.path("Path to your HA core repo:").ask()
         if not path_str:
             raise typer.Exit(0)
         core_path = Path(path_str).expanduser().resolve()
         if not core_path.is_dir():
-            typer.echo(f"Error: '{path_str}' is not a directory.")
+            _err(f"'{path_str}' is not a directory.")
             raise typer.Exit(1)
         c.core_path = str(core_path)
         cfg.save(c)
-        typer.echo(f"Core set to: {core_path}\n")
+        console.print(f"[green]✓[/green] Core set to: {_shrink(core_path)}\n")
 
     if not c.repos:
-        typer.echo("No integrations registered yet.")
+        console.print("[dim]No integrations registered yet.[/dim]")
         if questionary.confirm("Add your first integration repo now?", default=True).ask():
             path_str = questionary.path("Path to the integration repo:").ask()
             if path_str:
@@ -85,14 +98,13 @@ def _run_picker() -> None:
     cc = find_custom_components(core)
     currently_linked = linked_domains(cc)
     managed_domains: set[str] = set()
-
     choices = []
     domain_map: dict[str, tuple[str, str]] = {}
 
     for repo in c.repos:
         domain = detect_domain(Path(repo.path))
         if domain is None:
-            typer.echo(f"Warning: could not detect domain for '{repo.alias}' ({repo.path})")
+            console.print(f"[yellow]Warning:[/yellow] could not detect domain for '{repo.alias}' ({_shrink(repo.path)})")
             continue
         managed_domains.add(domain)
         domain_map[repo.alias] = (domain, repo.path)
@@ -105,16 +117,13 @@ def _run_picker() -> None:
         )
 
     if not choices:
-        typer.echo("No valid integrations found.")
+        _err("No valid integrations found.")
         raise typer.Exit(1)
 
-    selected = questionary.checkbox(
-        "Select integrations to activate:",
-        choices=choices,
-    ).ask()
+    selected = questionary.checkbox("Select integrations to activate:", choices=choices).ask()
 
     if selected is None:
-        typer.echo("Cancelled.")
+        console.print("[dim]Cancelled.[/dim]")
         raise typer.Exit(0)
 
     selected_set = set(selected)
@@ -123,22 +132,22 @@ def _run_picker() -> None:
     for alias, (domain, repo_path) in domain_map.items():
         result = sync_symlink(cc, Path(repo_path), domain, alias in selected_set)
         if result == "linked":
-            typer.echo(f"  + Linked    {domain}")
+            console.print(f"  [green]+[/green] Linked   {domain}")
             any_change = True
         elif result == "unlinked":
-            typer.echo(f"  - Unlinked  {domain}")
+            console.print(f"  [red]-[/red] Unlinked {domain}")
             any_change = True
         elif result.startswith("error"):
-            typer.echo(f"  ! {result}")
+            console.print(f"  [bold red]![/bold red] {result}")
 
     if not any_change:
-        typer.echo("  No changes.")
+        console.print("[dim]  No changes.[/dim]")
 
     unmanaged = find_unmanaged(cc, managed_domains)
     if unmanaged:
         names = ", ".join(d for d, _ in unmanaged)
-        typer.echo(f"\n  {len(unmanaged)} unregistered symlink(s) left untouched: {names}")
-        typer.echo("  Run `ha-link list` to review and register them.")
+        console.print(f"\n[yellow]  {len(unmanaged)} unregistered symlink(s) left untouched:[/yellow] {names}")
+        console.print("[dim]  Run `ha-link list` to review and register them.[/dim]")
 
 
 @app.callback(invoke_without_command=True)
@@ -161,40 +170,53 @@ def remove(alias: str = typer.Argument(..., help="Alias of the repo to unregiste
     before = len(c.repos)
     c.repos = [r for r in c.repos if r.alias != alias]
     if len(c.repos) == before:
-        typer.echo(f"Error: alias '{alias}' not found.")
+        _err(f"alias '{alias}' not found.")
         raise typer.Exit(1)
     cfg.save(c)
-    typer.echo(f"Removed '{alias}'. Note: any existing symlink was not removed.")
+    console.print(f"Removed [bold]{alias}[/bold]. [dim]Note: any existing symlink was not removed.[/dim]")
 
 
 @app.command(name="list")
 def list_repos() -> None:
     """Show all registered repos and their current link status."""
     c = cfg.load()
-    typer.echo(f"Core: {c.core_path or '(not set)'}")
-
     core = Path(c.core_path) if c.core_path else None
     cc = find_custom_components(core) if core else None
-    typer.echo(f"custom_components: {cc or '(unknown)'}\n")
+
+    console.print(f"[bold]Core:[/bold]              {_shrink(c.core_path) if c.core_path else '[dim](not set)[/dim]'}")
+    console.print(f"[bold]custom_components:[/bold] {_shrink(cc) if cc else '[dim](unknown)[/dim]'}")
 
     managed_domains: set[str] = set()
     currently_linked = linked_domains(cc) if cc else set()
 
     if not c.repos:
-        typer.echo("No integrations registered. Run `ha-link add <path>` to register one.")
-    else:
-        for repo in c.repos:
-            domain = detect_domain(Path(repo.path)) or "?"
-            managed_domains.add(domain)
-            status = "✓" if domain in currently_linked else " "
-            typer.echo(f"  [{status}] {repo.alias:<28} {domain:<35} {repo.path}")
+        console.print("\nNo integrations registered. Run [bold]ha-link add [i]<path>[/i][/bold] to register one.")
+        return
+
+    table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style="bold", pad_edge=False)
+    table.add_column("", width=1, no_wrap=True)
+    table.add_column("Alias", min_width=20)
+    table.add_column("Domain", min_width=24)
+    table.add_column("Path", style="dim")
+
+    for repo in c.repos:
+        domain = detect_domain(Path(repo.path)) or "?"
+        managed_domains.add(domain)
+        if domain in currently_linked:
+            table.add_row("[green]✓[/green]", f"[bold]{repo.alias}[/bold]", domain, _shrink(repo.path))
+        else:
+            table.add_row(" ", repo.alias, domain, _shrink(repo.path))
 
     if cc:
         unmanaged = find_unmanaged(cc, managed_domains)
         for domain, repo_root in unmanaged:
-            typer.echo(f"  [?] {'(unregistered)':<28} {domain:<35} {repo_root}")
+            table.add_row("[yellow]?[/yellow]", "[dim](unregistered)[/dim]", domain, _shrink(repo_root))
+
+    console.print(table)
+
+    if cc:
+        unmanaged = find_unmanaged(cc, managed_domains)
         if unmanaged:
-            typer.echo()
             _offer_adoption(unmanaged)
 
 
@@ -203,9 +225,9 @@ def set_core(path: str = typer.Argument(..., help="Path to the HA core repo")) -
     """Set the path to the Home Assistant core repo."""
     core_path = Path(path).expanduser().resolve()
     if not core_path.is_dir():
-        typer.echo(f"Error: '{path}' is not a directory.")
+        _err(f"'{path}' is not a directory.")
         raise typer.Exit(1)
     c = cfg.load()
     c.core_path = str(core_path)
     cfg.save(c)
-    typer.echo(f"Core set to: {core_path}")
+    console.print(f"[green]✓[/green] Core set to: {_shrink(core_path)}")
