@@ -19,6 +19,19 @@ def find_custom_components(core_path: Path) -> Path:
     return core_path / "custom_components"
 
 
+def find_unmanaged(cc_path: Path, managed_domains: set[str]) -> list[tuple[str, Path]]:
+    """Return (domain, repo_root) for symlinks in cc_path not in managed_domains."""
+    if not cc_path.is_dir():
+        return []
+    result = []
+    for p in cc_path.iterdir():
+        if p.is_symlink() and p.name not in managed_domains:
+            # target is repo/custom_components/domain — repo root is two levels up
+            repo_root = p.resolve().parent.parent
+            result.append((p.name, repo_root))
+    return result
+
+
 def linked_domains(cc_path: Path) -> set[str]:
     if not cc_path.is_dir():
         return set()

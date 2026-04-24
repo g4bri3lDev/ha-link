@@ -4,17 +4,35 @@ A small CLI tool for managing Home Assistant custom integration development agai
 
 Instead of maintaining one HA core clone per integration, `ha-link` symlinks your selected integrations into the core's `custom_components/` directory so you can switch between them with an interactive picker.
 
-## How it works
-
-`ha-link` maintains a list of registered integration repos and a path to your HA core clone. When you run it, you get a checkbox picker to select which integrations should be active. It then creates or removes symlinks in `{core}/config/custom_components/` accordingly.
-
 Edits to your integration source are reflected immediately in the running HA instance — no copying needed.
+
+## Requirements
+
+- Python 3.11+
+- A local clone of [Home Assistant core](https://github.com/home-assistant/core)
 
 ## Install
 
 ```bash
-cd ~/Developer/ha-link
-uv tool install -e .
+pip install ha-link
+# or
+uv tool install ha-link
+```
+
+## First run
+
+Run `ha-link` with no arguments. If no config is found, a short wizard guides you through setting the core path and registering your first integration repo:
+
+```
+No HA core path configured yet.
+? Path to your HA core repo: ~/Developer/homeassistant/core
+Core set to: /home/you/Developer/homeassistant/core
+
+No integrations registered yet.
+? Add your first integration repo now? Yes
+? Path to the integration repo: ~/Developer/my-integration
+? Alias for this integration: my-integration
+Registered 'my-integration' (my_integration)
 ```
 
 ## Usage
@@ -33,10 +51,8 @@ Running `ha-link` with no arguments opens an interactive checkbox. Use arrow key
 
 ```
 ? Select integrations to activate:
- ❯ ◉ dynamic-image  (dynamic_image)
-   ◯ mvg  (munich_public_transport)
-   ◯ open-epaper-link  (open_epaper_link)
-   ◯ opendisplay-ha  (opendisplay)
+ ❯ ◉ my-integration    (my_integration)
+   ◯ another-one       (another_integration)
 ```
 
 ### Adding a new integration
@@ -45,8 +61,17 @@ Point `ha-link add` at the repo root. It auto-detects the integration domain fro
 
 ```bash
 ha-link add ~/Developer/my-new-integration
-# Alias for this integration: [my-integration] my-integration
-# Registered 'my-integration' (my_integration)
+# ? Alias for this integration: [my-new-integration] my-new-integration
+# Registered 'my-new-integration' (my_new_integration)
+```
+
+### Unregistered symlinks
+
+If `ha-link list` finds symlinks in `custom_components/` that aren't registered, it marks them with `[?]` and offers to adopt them:
+
+```
+  [✓] my-integration       my_integration    ~/Developer/my-integration
+  [?] (unregistered)       old_integration   ~/Developer/old-integration
 ```
 
 ## Config
@@ -55,11 +80,15 @@ Config lives at `~/.config/ha-link/config.toml`. You can edit it directly.
 
 ```toml
 [core]
-path = "/Users/you/Developer/homeassistant/core"
+path = "/home/you/Developer/homeassistant/core"
 
 [[repos]]
 alias = "my-integration"
-path = "/Users/you/Developer/my-integration"
+path = "/home/you/Developer/my-integration"
+
+[[repos]]
+alias = "another-one"
+path = "/home/you/Developer/another-integration"
 ```
 
-The tool expects each repo to contain a `custom_components/<domain>/` folder with a `manifest.json`. Symlinks are created at `{core}/config/custom_components/<domain>` (HA's built-in dev config directory).
+Each repo must contain a `custom_components/<domain>/manifest.json`. Symlinks are created at `{core}/config/custom_components/<domain>` if that directory exists (HA's built-in dev config), otherwise at `{core}/custom_components/<domain>`.
