@@ -18,10 +18,8 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          release-type: python
-          package-name: ha-link
-          bump-minor-pre-major: true
-          bump-patch-for-minor-pre-major: true
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
       # The following steps only run if a release was created
       - name: Checkout code
